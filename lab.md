@@ -369,3 +369,124 @@ After comparing the runs and sorting them by final `val_accuracy`, the best run 
 - Run ID: `7694b83f9fa545c88333680f639bbfca`
 
 This run had the highest final validation accuracy among the tested configurations.
+# Lab 3 - Model Serving with FastAPI and Docker
+
+## Q1
+The best model was registered in the MLflow Model Registry under the name `food11`.
+
+Registered model version: **Version 1**
+
+A logged model artifact is associated with a specific MLflow run and contains the saved model files. A registered model is a model managed through the MLflow Model Registry, where it can have versions and aliases and can be used for deployment.
+
+## Q2
+I assigned the alias `champion` to Version 1 of the `food11` registered model.
+
+An MLflow model version is a numbered, immutable version of a registered model. An alias is a human-readable pointer such as `champion` that can be reassigned to another model version later.
+
+Using an alias makes deployment easier because the serving code does not need to be changed when a newer model becomes the production model.
+
+## Q3
+The FastAPI service loads the model using:
+
+`models:/food11@champion`
+
+This URI is useful because the serving application refers to the `champion` alias instead of a fixed version number. If the alias is moved to a newer model version, the serving code can remain unchanged.
+
+The API provides:
+
+- `GET /health`
+- `POST /predict`
+
+The `/health` endpoint returned:
+
+`{"status":"ok"}`
+
+The `/predict` endpoint was tested with a Food-11 image and returned:
+
+`{"category":"Egg","confidence":0.6829885244369507}`
+
+The prediction being different from the true class does not indicate a serving failure; the API successfully loaded the model and returned an inference result.
+
+## Q4
+The Dockerfile uses a multi-stage build.
+
+The builder stage installs the Python dependencies and creates the virtual environment. The runtime stage copies only the virtual environment and application source code needed to run the API.
+
+Docker layer caching is improved by copying dependency files such as `pyproject.toml` and `uv.lock` before copying the application source code. Therefore, changing only the source code does not require all dependencies to be installed again.
+
+## Q5
+The final Docker image was inspected with:
+
+`docker images food11-api`
+
+The resulting image was:
+
+- Image: `food11-api:latest`
+- Disk usage: **2.08 GB**
+- Content size: **443 MB**
+
+`docker history food11-api:latest` showed that the largest layer was the copied virtual environment:
+
+`COPY /app/.venv /app/.venv`
+
+This layer used approximately **1.5 GB** according to Docker history.
+
+The multi-stage build prevents builder-only files and tools from being copied into the runtime stage. I did not record a separate final size for a naive single-stage image, so I do not report an unmeasured comparison value.
+
+## Q6
+The `.dockerignore` file excludes files and directories that do not need to be sent to the Docker build context, including:
+
+- `.venv`
+- `data`
+- `mlruns`
+- `mlflow.db`
+- `.git`
+- `__pycache__`
+- `*.pyc`
+
+This reduces the build context, avoids copying unnecessary large files, and helps make Docker builds faster and cleaner.
+
+## Q7
+Inside a Docker container, `localhost` refers to the container itself, not the Windows host machine.
+
+Therefore the container uses:
+
+`http://host.docker.internal:5000`
+
+to communicate with the MLflow server running on the host machine.
+
+The container was run with the environment variable:
+
+`MLFLOW_TRACKING_URI=http://host.docker.internal:5000`
+
+## Q8
+I restarted the same Docker container and verified that it started successfully again.
+
+After restart, the container logs showed:
+
+`Application startup complete.`
+
+and:
+
+`Uvicorn running on http://0.0.0.0:8000`
+
+The health endpoint again returned:
+
+`{"status":"ok"}`
+
+The model is loaded at application startup using:
+
+`mlflow.pyfunc.load_model("models:/food11@champion")`
+
+Therefore, when the container starts, it resolves the `champion` alias through MLflow and loads the registered model.
+
+For the local MLflow artifact store used in this lab, the `mlruns` directory also had to be mounted into the container so that the container could access the model artifacts.
+
+## Q9
+The remaining step for a real deployment workflow would be to publish the Docker image to a remote container registry such as Docker Hub, GitHub Container Registry, or a cloud container registry.
+
+The image should be tagged with meaningful versions, for example:
+
+`food11-api:v1`
+
+A registry allows the image to be pulled and deployed on another machine. Immutable image digests can also be used to identify the exact container image that was deployed.
