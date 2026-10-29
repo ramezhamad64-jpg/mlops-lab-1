@@ -11,11 +11,8 @@ ENV UV_LINK_MODE=copy
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src/mlops_lab_1 ./src/mlops_lab_1
-COPY wheels/ ./wheels/
 
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-package torch
-
-RUN uv pip install --python /app/.venv/bin/python --no-deps ./wheels/torch-2.14.0+cpu-cp310-cp310-manylinux_2_28_x86_64.whl
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
 
 FROM python:3.10-slim AS runtime
