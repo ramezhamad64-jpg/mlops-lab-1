@@ -61,7 +61,7 @@ def validate(root: Path, min_per_class: int, tau: float) -> bool:
                     with Image.open(path) as img:
                         if img.mode != "RGB" or img.size != (128, 128):
                             images_ok = False
-                except Exception:
+                except (OSError, ValueError):
                     images_ok = False
 
     results.append(report("all images valid RGB 128x128", images_ok))
