@@ -1,12 +1,13 @@
 import io
 import os
+from typing import Annotated
 
-import mlflow
 import mlflow.pyfunc
 import numpy as np
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from PIL import Image
 
+import mlflow
 
 CLASS_NAMES = [
     "Bread",
@@ -32,7 +33,17 @@ mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 app = FastAPI(title="Food11 API")
 
-model = mlflow.pyfunc.load_model("models:/food11@champion")
+model = None
+
+
+@app.on_event("startup")
+def load_model():
+    global model
+
+    if os.environ.get("SKIP_MODEL"):
+        return
+
+    model = mlflow.pyfunc.load_model("models:/food11@champion")
 
 
 @app.get("/health")
@@ -41,7 +52,10 @@ def health():
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(file: Annotated[UploadFile, File()]):
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model is not loaded")
+
     contents = await file.read()
 
     image = Image.open(io.BytesIO(contents)).convert("RGB")
