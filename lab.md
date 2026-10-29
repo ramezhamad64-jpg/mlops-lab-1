@@ -490,3 +490,44 @@ The image should be tagged with meaningful versions, for example:
 `food11-api:v1`
 
 A registry allows the image to be pulled and deployed on another machine. Immutable image digests can also be used to identify the exact container image that was deployed.
+# Lab 4 - Docker Compose
+
+## Question 1
+Without a volume, everything written to `/mlflow-data` is stored only in the container writable layer. If the container is removed and a new container is created from the image, the MLflow database and artifacts are lost and the UI starts empty.
+
+## Question 2
+A named volume is managed by Docker, persists independently of containers, and does not depend on a specific host directory path. A bind mount would also work, but it couples the setup to a folder on the host machine. For this Compose setup, a named volume is cleaner and more portable.
+
+## Question 3
+Docker Compose creates a private network for the services and provides DNS resolution using service names. Therefore the inference container can reach MLflow using `http://mlflow:5000`. In Lab 3, MLflow was running on the host instead of on the same Compose network, so `mlflow` was not a resolvable container hostname.
+
+## Question 4
+Using the `INFERENCE_URL` environment variable keeps the frontend image configurable. Inside Compose it can use `http://inference:8000`, while if the frontend is run alone it can use another URL such as `http://127.0.0.1:8000` without rebuilding the image.
+
+## Question 5
+The inference service does not need a published host port because it is only called by the frontend service. Both containers are on the same Compose network, so the frontend reaches it internally at `http://inference:8000`. Only MLflow and the frontend need ports published for access from the host browser.
+
+## Question 6
+`depends_on` controls container startup order but does not guarantee that MLflow is ready to answer requests. If the inference service tries to load the model before MLflow is ready, model loading fails and the inference container exits. It can be started again with `docker compose restart inference` after MLflow is ready. During my test, the inference service also exited when the new MLflow registry did not yet contain the `food11` model.
+
+## Question 7
+`docker compose ps` showed published ports for MLflow (`5000:5000`) and the frontend (`8501:8501`). The inference service showed only its internal `8000/tcp` port and no host mapping. This matches the Compose configuration because inference traffic stays inside the Compose network.
+
+## Question 8
+The inference application loads the model once when it starts, so changing the model version in MLflow does not automatically replace the model already loaded in memory. The command needed to reload it is:
+
+`docker compose restart inference`
+
+In my setup I used the MLflow `champion` alias instead of a Staging stage. I registered a new version, moved the `champion` alias to it, and restarted the inference service so it loaded the new version.
+
+## Question 9
+A restart is enough because the inference application code and dependencies are already baked into the Docker image, while the model is fetched from MLflow when the container starts. Since the application code did not change, there is no need to rebuild the image.
+
+## Question 10
+After `docker compose down` followed by `docker compose up`, the registered `food11` model and the `champion` alias were still present. This showed that the named volume persisted the MLflow database and artifacts.
+
+After `docker compose down -v`, the named volume was deleted. When the stack was started again, MLflow created a new empty volume. The registered-model list returned `[]`, and the inference service exited because `food11` no longer existed. This demonstrates that the named volume is what preserves the MLflow state.
+
+## Question 11
+Docker Compose is mainly intended for running services on one machine. To run multiple inference replicas across machines with automatic load balancing and recovery, an orchestrator such as Kubernetes or Docker Swarm would be needed. MLflow would also need durable shared infrastructure such as an external database and shared artifact storage so that it can survive failure of one machine.
+
